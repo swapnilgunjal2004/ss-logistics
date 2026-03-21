@@ -1,47 +1,85 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const cors = require('cors');
 const http = require('http');
 const socketIo = require('socket.io');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
-
-// MongoDB connection setup
-mongoose.connect('mongodb://localhost:27017/sslogistics', { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('MongoDB connected'))
-    .catch(err => console.error('MongoDB connection error:', err));
-
-// Middleware
-app.use(express.json());
-
-// API Routes
-app.post('/api/booking', (req, res) => {
-    // Handle truck booking
-    const { userId, truckId, pickupLocation, dropLocation } = req.body;
-    // Save booking to database logic shall be implemented here
-    res.status(201).send({ message: 'Booking created', bookingId: '123456' });
+const io = socketIo(server, {
+  cors: {
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+  },
 });
 
-app.get('/api/bookings/:userId', (req, res) => {
-    // Fetch user bookings logic shall be implemented here
-    res.status(200).send({ bookings: [] });
+// Middleware
+app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000' }));
+app.use(express.json());
+
+// Rate limiting
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many requests, please try again later.' },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many authentication attempts, please try again later.' },
+});
+
+app.use('/api/', generalLimiter);
+app.use('/api/auth/', authLimiter);
+
+// MongoDB connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/sslogistics';
+mongoose
+  .connect(MONGODB_URI)
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch((err) => console.error('❌ MongoDB connection error:', err));
+
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/trucks', require('./routes/trucks'));
+app.use('/api/bookings', require('./routes/bookings'));
+app.use('/api/tracking', require('./routes/tracking'));
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', message: 'SS Logistics API is running', timestamp: new Date() });
 });
 
 // Socket.io real-time tracking
 io.on('connection', (socket) => {
-    console.log('New client connected');
-    socket.on('trackLocation', (data) => {
-        // Logic to update location in real-time
-        console.log('Tracking data received:', data);
-        socket.broadcast.emit('locationUpdate', data);
-    });
-    socket.on('disconnect', () => {
-        console.log('Client disconnected');
-    });
+  console.log('🔌 New client connected:', socket.id);
+
+  socket.on('join_tracking', (bookingId) => {
+    socket.join(`tracking_${bookingId}`);
+    console.log(`Socket ${socket.id} joined room tracking_${bookingId}`);
+  });
+
+  socket.on('update_location', (data) => {
+    io.to(`tracking_${data.bookingId}`).emit('location_updated', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('🔌 Client disconnected:', socket.id);
+  });
 });
+
+// Make io accessible in routes
+app.set('io', io);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+  console.log(`🚀 SS Logistics Backend running on port ${PORT}`);
 });

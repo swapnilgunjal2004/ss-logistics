@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6
+    container_name: ss-logistics-mongo
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: ss-logistics-backend
+    ports:
+      - '5000:5000'
+    environment:
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongodb:27017/sslogistics
+      - JWT_SECRET=ss_logistics_secret_change_in_production
+      - FRONTEND_URL=http://localhost:3000
+      - NODE_ENV=production
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      # REACT_APP_* variables are baked in at build time by Create React App
+      args:
+        - REACT_APP_API_URL=http://localhost:5000/api
+        - REACT_APP_SOCKET_URL=http://localhost:5000
+        - REACT_APP_WHATSAPP_NUMBER=8483889717
+    container_name: ss-logistics-frontend
+    ports:
+      - '3000:80'
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+
