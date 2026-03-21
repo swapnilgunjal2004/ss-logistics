@@ -26,16 +26,20 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      # REACT_APP_* variables are baked in at build time by Create React App
+      args:
+        - REACT_APP_API_URL=http://localhost:5000/api
+        - REACT_APP_SOCKET_URL=http://localhost:5000
+        - REACT_APP_WHATSAPP_NUMBER=8483889717
     container_name: ss-logistics-frontend
     ports:
       - '3000:80'
-    environment:
-      - REACT_APP_API_URL=http://localhost:5000/api
-      - REACT_APP_SOCKET_URL=http://localhost:5000
     depends_on:
       - backend
     restart: unless-stopped
 
 volumes:
   mongo_data:
+
